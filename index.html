@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a43">
+  <title>پیداکالا | جست‌وجوی هوشمند فروشگاه‌ها</title>
+  <meta name="description" content="جست‌وجوی فروشگاه‌ها و ارائه نتایج خرید به زبان فارسی">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div class="logo" aria-hidden="true">پ</div>
+      <p class="eyebrow">جست‌وجوی هوشمند خرید</p>
+      <h1>پیداکالا</h1>
+      <p class="intro">کالا یا خدمت موردنظرتان را بنویسید تا فروشگاه‌های مرتبط را پیدا کنیم.</p>
+      <form id="search-form">
+        <label class="sr-only" for="query">نام کالا یا خدمت</label>
+        <input id="query" name="q" type="search" placeholder="مثلاً روغن موتور 10W-40" maxlength="180" required>
+        <button id="search-button" type="submit">جست‌وجو</button>
+      </form>
+      <p class="hint">نتایج بر اساس ارتباط جست‌وجو و نشانه‌های فروشگاهی مرتب می‌شوند.</p>
+    </header>
+    <section class="status" id="status" aria-live="polite">برای شروع، نام کالا یا خدمت را وارد کنید.</section>
+    <section id="results" class="results" aria-label="نتایج جست‌وجو"></section>
+    <footer>پیداکالا — پیش از خرید، قیمت نهایی، هزینه ارسال و اعتبار فروشنده را بررسی کنید.</footer>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>
