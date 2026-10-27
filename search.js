@@ -50,7 +50,8 @@ function reply(statusCode, data, reqId) {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
       'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET, OPTIONS'
+      'access-control-allow-methods': 'GET, OPTIONS',
+      'access-control-allow-headers': 'Content-Type'
     },
     body: JSON.stringify({ ...data, reqId })
   };
@@ -68,11 +69,9 @@ function makeTimeout(ms) {
 export const handler = async (event) => {
   const reqId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   
-  console.log(`[${reqId}] Request:`, {
-    method: event.httpMethod,
-    query: event.queryStringParameters,
-    headers: event.headers?.host
-  });
+  console.log(`[${reqId}] === NEW REQUEST ===`);
+  console.log(`[${reqId}] Method: ${event.httpMethod}`);
+  console.log(`[${reqId}] Query params:`, event.queryStringParameters);
 
   if (event.httpMethod === 'OPTIONS') {
     return reply(204, {}, reqId);
@@ -81,10 +80,9 @@ export const handler = async (event) => {
   const rawQ = event.queryStringParameters?.q;
   const q = sanitize(rawQ);
 
-  console.log(`[${reqId}] Parsed query: "${q}"`);
+  console.log(`[${reqId}] Sanitized query: "${q}"`);
 
   if (!q) {
-    console.log(`[${reqId}] Empty query rejected`);
     return reply(400, { error: 'لطفاً نام کالا یا خدمت را وارد کنید.' }, reqId);
   }
   
@@ -95,10 +93,14 @@ export const handler = async (event) => {
   const key = process.env.GOOGLE_CSE_API_KEY;
   const cx = process.env.GOOGLE_CSE_CX;
 
-  console.log(`[${reqId}] Env check: key=${key ? 'yes' : 'NO'}, cx=${cx ? 'yes' : 'NO'}`);
+  console.log(`[${reqId}] API Key present: ${key ? 'YES' : 'NO'}`);
+  console.log(`[${reqId}] CX present: ${cx ? 'YES' : 'NO'}`);
 
   if (!key || !cx) {
-    return reply(503, { error: 'موتور جست‌وجو پیکربندی نشده است. تنظیمات API در Netlify را بررسی کنید.' }, reqId);
+    return reply(503, { 
+      error: 'موتور جست‌وجو پیکربندی نشده است.',
+      hint: 'GOOGLE_CSE_API_KEY and GOOGLE_CSE_CX must be set in Netlify environment variables.'
+    }, reqId);
   }
 
   try {
@@ -108,25 +110,25 @@ export const handler = async (event) => {
     url.searchParams.set('q', buildQuery(q));
     url.searchParams.set('num', String(CONFIG.MAX_RESULTS));
 
-    const urlStr = url.toString().replace(key, '***HIDDEN***');
-    console.log(`[${reqId}] Calling: ${urlStr}`);
+    const safeUrl = url.toString().replace(key, '***');
+    console.log(`[${reqId}] Calling: ${safeUrl}`);
 
     const response = await fetch(url.toString(), {
       signal: makeTimeout(CONFIG.TIMEOUT_MS)
     });
 
-    console.log(`[${reqId}] Response status: ${response.status}`);
+    console.log(`[${reqId}] Google status: ${response.status}`);
 
     let data;
     try {
       data = await response.json();
     } catch (parseErr) {
-      console.error(`[${reqId}] JSON parse error:`, parseErr.message);
+      console.error(`[${reqId}] JSON parse failed:`, parseErr.message);
       return reply(502, { error: 'پاسخ نامعتبر از سرویس جست‌وجو.' }, reqId);
     }
 
     if (!response.ok) {
-      console.error(`[${reqId}] API error:`, data.error);
+      console.error(`[${reqId}] Google error:`, data.error);
       const msg = response.status === 429 ? 'سهمیه جست‌وجو تمام شده است.'
         : response.status === 403 ? 'دسترسی به API محدود شده است.'
         : response.status === 400 ? 'درخواست نامعتبر - CX یا کلید API اشتباه است.'
@@ -134,7 +136,7 @@ export const handler = async (event) => {
       return reply(502, { error: msg, details: data.error?.message }, reqId);
     }
 
-    console.log(`[${reqId}] Items received: ${data.items?.length || 0}`);
+    console.log(`[${reqId}] Got ${data.items?.length || 0} items`);
 
     const seen = new Set();
     const results = (data.items || [])
@@ -172,12 +174,11 @@ export const handler = async (event) => {
     return reply(200, {
       query: q,
       results,
-      total: data.searchInformation?.totalResults,
       note: 'امتیازها تخمینی هستند و اعتبار واقعی فروشگاه را تضمین نمی‌کنند.'
     }, reqId);
 
   } catch (err) {
-    console.error(`[${reqId}] Exception:`, err.name, err.message);
+    console.error(`[${reqId}] EXCEPTION:`, err.name, err.message);
     const isTimeout = err.name === 'AbortError' || err.name === 'TimeoutError';
     return reply(500, {
       error: isTimeout ? 'سرویس جست‌وجو زمان‌بر شد. دوباره تلاش کنید.' : 'ارتباط با سرویس جست‌وجو برقرار نشد.'
