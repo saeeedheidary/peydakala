@@ -1,31 +1,357 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#102a43">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>پیداکالا | جست‌وجوی هوشمند فروشگاه‌ها</title>
-  <meta name="description" content="جست‌وجوی فروشگاه‌ها و ارائه نتایج خرید به زبان فارسی">
-  <link rel="stylesheet" href="/styles.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+    
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem 1rem;
+    }
+    
+    header {
+      text-align: center;
+      padding: 3rem 0;
+    }
+    
+    h1 {
+      font-size: 2.5rem;
+      color: #1a73e8;
+      margin-bottom: 0.5rem;
+    }
+    
+    .subtitle {
+      color: #666;
+      font-size: 1.1rem;
+    }
+    
+    .search-box {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      margin-bottom: 2rem;
+    }
+    
+    .input-group {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    input[type="text"] {
+      flex: 1;
+      padding: 0.875rem 1rem;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+    
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #1a73e8;
+    }
+    
+    button {
+      padding: 0.875rem 1.5rem;
+      background: #1a73e8;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    
+    button:hover:not(:disabled) {
+      background: #1557b0;
+    }
+    
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .hint {
+      color: #888;
+      font-size: 0.875rem;
+      margin-top: 0.75rem;
+    }
+    
+    /* Loading */
+    .loading {
+      text-align: center;
+      padding: 3rem;
+      color: #666;
+    }
+    
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #e0e0e0;
+      border-top-color: #1a73e8;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* Results */
+    .results-info {
+      color: #666;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+    
+    .result-card {
+      background: white;
+      border-radius: 10px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      transition: box-shadow 0.2s;
+    }
+    
+    .result-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    }
+    
+    .result-rank {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      background: #1a73e8;
+      color: white;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 28px;
+      font-size: 0.875rem;
+      font-weight: bold;
+      margin-left: 0.75rem;
+    }
+    
+    .result-title {
+      font-size: 1.1rem;
+      color: #1a73e8;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    
+    .result-title:hover {
+      text-decoration: underline;
+    }
+    
+    .result-host {
+      color: #0d652d;
+      font-size: 0.875rem;
+      margin-top: 0.25rem;
+    }
+    
+    .result-snippet {
+      color: #555;
+      margin-top: 0.5rem;
+      font-size: 0.95rem;
+    }
+    
+    .result-reason {
+      display: inline-block;
+      margin-top: 0.75rem;
+      padding: 0.25rem 0.75rem;
+      background: #e8f0fe;
+      color: #1a73e8;
+      border-radius: 20px;
+      font-size: 0.8rem;
+    }
+    
+    .result-score {
+      float: left;
+      color: #888;
+      font-size: 0.8rem;
+    }
+    
+    /* Error */
+    .error-box {
+      background: #fce8e8;
+      color: #c5221f;
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+    
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: #888;
+    }
+    
+    .empty-state svg {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 1rem;
+      opacity: 0.3;
+    }
+    
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: #999;
+      font-size: 0.875rem;
+    }
+    
+    .hidden { display: none; }
+  </style>
 </head>
 <body>
-  <main class="shell">
-    <header class="hero">
-      <div class="logo" aria-hidden="true">پ</div>
-      <p class="eyebrow">جست‌وجوی هوشمند خرید</p>
+  <div class="container">
+    <header>
       <h1>پیداکالا</h1>
-      <p class="intro">کالا یا خدمت موردنظرتان را بنویسید تا فروشگاه‌های مرتبط را پیدا کنیم.</p>
-      <form id="search-form">
-        <label class="sr-only" for="query">نام کالا یا خدمت</label>
-        <input id="query" name="q" type="search" placeholder="مثلاً روغن موتور 10W-40" maxlength="180" required>
-        <button id="search-button" type="submit">جست‌وجو</button>
-      </form>
-      <p class="hint">نتایج بر اساس ارتباط جست‌وجو و نشانه‌های فروشگاهی مرتب می‌شوند.</p>
+      <p class="subtitle">جست‌وجوی هوشمند فروشگاه‌ها</p>
     </header>
-    <section class="status" id="status" aria-live="polite">برای شروع، نام کالا یا خدمت را وارد کنید.</section>
-    <section id="results" class="results" aria-label="نتایج جست‌وجو"></section>
-    <footer>پیداکالا — پیش از خرید، قیمت نهایی، هزینه ارسال و اعتبار فروشنده را بررسی کنید.</footer>
-  </main>
-  <script src="/app.js" defer></script>
+    
+    <div class="search-box">
+      <div class="input-group">
+        <input 
+          type="text" 
+          id="searchInput" 
+          placeholder="مثلاً: گوشی سامسونگ، لپ‌تاپ، هدفون..."
+          autocomplete="off"
+        >
+        <button id="searchBtn" onclick="doSearch()">🔍 جستجو</button>
+      </div>
+      <p class="hint">نتایج بر اساس ارتباط جست‌وجو و نشانه‌های فروشگاهی مرتب می‌شوند.</p>
+    </div>
+    
+    <!-- Loading -->
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <p>در حال جست‌وجو...</p>
+    </div>
+    
+    <!-- Error -->
+    <div id="error" class="error-box hidden"></div>
+    
+    <!-- Results -->
+    <div id="results"></div>
+    
+    <!-- Empty state -->
+    <div id="empty" class="empty-state">
+      <p>برای شروع، نام کالا یا خدمت را وارد کنید</p>
+    </div>
+  </div>
+  
+  <footer>
+    <p>پیداکالا - امتیازها تخمینی هستند و اعتبار فروشگاه را تضمین نمی‌کنند.</p>
+  </footer>
+
+  <script>
+    const API_URL = '/.netlify/functions/search';
+    
+    // Enter key support
+    document.getElementById('searchInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') doSearch();
+    });
+    
+    async function doSearch() {
+      const input = document.getElementById('searchInput');
+      const query = input.value.trim();
+      
+      if (!query) {
+        showError('لطفاً نام کالا یا خدمت را وارد کنید.');
+        return;
+      }
+      
+      // UI state
+      document.getElementById('empty').classList.add('hidden');
+      document.getElementById('error').classList.add('hidden');
+      document.getElementById('results').innerHTML = '';
+      document.getElementById('loading').classList.remove('hidden');
+      document.getElementById('searchBtn').disabled = true;
+      
+      try {
+        console.log('Calling:', `${API_URL}?q=${encodeURIComponent(query)}`);
+        
+        const response = await fetch(`${API_URL}?q=${encodeURIComponent(query)}`);
+        
+        console.log('Response status:', response.status);
+        
+        const data = await response.json();
+        console.log('Response data:', data);
+        
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'خطا در جست‌وجو');
+        }
+        
+        displayResults(data);
+        
+      } catch (err) {
+        console.error('Search failed:', err);
+        showError(err.message || 'ارتباط با سرویس جست‌وجو برقرار نشد.');
+      } finally {
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('searchBtn').disabled = false;
+      }
+    }
+    
+    function displayResults(data) {
+      const container = document.getElementById('results');
+      
+      if (!data.results || data.results.length === 0) {
+        container.innerHTML = '<div class="empty-state">نتیجه‌ای یافت نشد. عبارت دیگری امتحان کنید.</div>';
+        return;
+      }
+      
+      let html = `<div class="results-info">${data.results.length} فروشگاه مرتبط پیدا شد</div>`;
+      
+      for (const item of data.results) {
+        html += `
+          <div class="result-card">
+            <span class="result-score">امتیاز: ${item.score}</span>
+            <span class="result-rank">${item.rank}</span>
+            <a href="${escapeHtml(item.link)}" target="_blank" rel="noopener" class="result-title">
+              ${escapeHtml(item.title)}
+            </a>
+            <div class="result-host">${escapeHtml(item.host)}</div>
+            <div class="result-snippet">${escapeHtml(item.snippet)}</div>
+            <span class="result-reason">${escapeHtml(item.reason)}</span>
+          </div>
+        `;
+      }
+      
+      container.innerHTML = html;
+    }
+    
+    function showError(message) {
+      const el = document.getElementById('error');
+      el.textContent = message;
+      el.classList.remove('hidden');
+    }
+    
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
 </body>
 </html>
