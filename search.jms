@@ -1,199 +1,156 @@
-/**
- * PidaKala Search API - Production Ready
- * Netlify Serverless Function
- */
-
-const CONFIG = Object.freeze({
-  MAX_QUERY_LENGTH: 180,
-  DEFAULT_TIMEOUT_MS: 12000,
-  MAX_RESULTS: 10,
-  CACHE_CONTROL: 'no-store, no-cache, must-revalidate, proxy-revalidate',
-  CORS_ORIGIN: '*',
-});
-
-const BLOCKED_DOMAINS = Object.freeze([
+const BLOCKED = [
   'facebook.com', 'instagram.com', 'tiktok.com',
   'youtube.com', 'wikipedia.org', 'reddit.com',
   'pinterest.com', 'linkedin.com', 'twitter.com',
-  'x.com', 't.co', 'telegram.org', 'discord.com',
-]);
+  'x.com', 't.co'
+];
 
-const COMMERCE_KEYWORDS = Object.freeze([
-  'خرید', 'فروشگاه', 'قیمت', 'سفارش', 'محصول',
-  'shop', 'store', 'buy', 'price', 'product', 'order',
-  'فروش', 'تخفیف', 'ارزان', 'اصل', 'گارانتی',
-]);
+const CONFIG = {
+  MAX_QUERY_LENGTH: 180,
+  TIMEOUT_MS: 15000,
+  MAX_RESULTS: 10
+};
 
-const DIVERSITY_KEYWORDS = Object.freeze([
-  'تنوع', 'برند', 'محصولات', 'دسته‌بندی',
-  'variety', 'brands', 'catalog', 'collection',
-  'مدل', 'رنگ', 'سایز', 'گوناگون',
-]);
-
-function extractHost(url) {
-  if (!url || typeof url !== 'string') return '';
+function hostOf(url) {
   try {
-    return new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+    return new URL(url).hostname.replace(/^www\./, '').toLowerCase();
   } catch {
     return '';
   }
 }
 
-function generateRequestId() {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+function sanitize(input) {
+  if (!input || typeof input !== 'string') return '';
+  return input.trim().replace(/[<>\"']/g, '').replace(/\s+/g, ' ');
 }
 
-function isBlockedDomain(host) {
-  if (!host) return true;
-  return BLOCKED_DOMAINS.some(d => host === d || host.endsWith(`.${d}`));
+function buildQuery(q) {
+  const hasPersian = /[\u0600-\u06FF]/.test(q);
+  return hasPersian ? `${q} خرید فروشگاه قیمت` : `${q} buy price shop store`;
 }
 
-function sanitizeInput(input) {
-  if (!input) return '';
-  return input
-    .trim()
-    .replace(/[<>\"']/g, '')
-    .replace(/\s+/g, ' ')
-    .substring(0, CONFIG.MAX_QUERY_LENGTH);
-}
-
-function buildSearchQuery(query) {
-  const hasPersian = /[\u0600-\u06FF]/.test(query);
-  return hasPersian
-    ? `${query} خرید فروشگاه قیمت`
-    : `${query} buy price shop store product`;
-}
-
-function calculateScore(item) {
+function scoreResult(item) {
   const text = `${item.title || ''} ${item.snippet || ''} ${item.link || ''}`.toLowerCase();
+  const commerce = ['خرید', 'فروشگاه', 'قیمت', 'سفارش', 'محصول', 'shop', 'store', 'buy', 'price', 'product'];
+  const diversity = ['تنوع', 'برند', 'محصولات', 'دسته‌بندی', 'variety', 'brands', 'catalog'];
   let score = 40;
 
-  for (const word of COMMERCE_KEYWORDS) {
-    if (text.includes(word)) score += 4;
-  }
-  for (const word of DIVERSITY_KEYWORDS) {
-    if (text.includes(word)) score += 3;
-  }
+  for (const word of commerce) if (text.includes(word)) score += 4;
+  for (const word of diversity) if (text.includes(word)) score += 3;
   if ((item.link || '').startsWith('https://')) score += 4;
-  if (item.pagemap?.product || item.pagemap?.offer) score += 8;
+  if (item.pagemap && (item.pagemap.product || item.pagemap.offer)) score += 8;
 
-  return Math.min(100, Math.max(0, score));
+  return Math.min(100, score);
 }
 
-function createResponse(statusCode, data, options = {}) {
-  const headers = {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': options.cacheControl || CONFIG.CACHE_CONTROL,
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Access-Control-Allow-Origin': CONFIG.CORS_ORIGIN,
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
-
-  if (options.requestId) {
-    headers['X-Request-Id'] = options.requestId;
-  }
-
+function reply(statusCode, data, reqId) {
   return {
     statusCode,
-    headers,
-    body: JSON.stringify({
-      success: statusCode >= 200 && statusCode < 300,
-      ...data,
-      ...(options.requestId && { requestId: options.requestId }),
-    }),
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'access-control-allow-origin': '*',
+      'access-control-allow-methods': 'GET, OPTIONS'
+    },
+    body: JSON.stringify({ ...data, reqId })
   };
 }
 
-function createTimeoutSignal(ms) {
-  if (typeof AbortSignal?.timeout === 'function') {
+function makeTimeout(ms) {
+  if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
     return AbortSignal.timeout(ms);
   }
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), ms);
-  controller.signal.addEventListener('abort', () => clearTimeout(timeoutId), { once: true });
-  return controller.signal;
+  const ctrl = new AbortController();
+  setTimeout(() => ctrl.abort(), ms);
+  return ctrl.signal;
 }
 
 export const handler = async (event) => {
-  const requestId = generateRequestId();
+  const reqId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  
+  console.log(`[${reqId}] Request:`, {
+    method: event.httpMethod,
+    query: event.queryStringParameters,
+    headers: event.headers?.host
+  });
 
   if (event.httpMethod === 'OPTIONS') {
-    return createResponse(204, {}, { requestId });
+    return reply(204, {}, reqId);
   }
 
-  if (event.httpMethod !== 'GET') {
-    return createResponse(405, { error: 'فقط درخواست GET مجاز است.' }, { requestId });
+  const rawQ = event.queryStringParameters?.q;
+  const q = sanitize(rawQ);
+
+  console.log(`[${reqId}] Parsed query: "${q}"`);
+
+  if (!q) {
+    console.log(`[${reqId}] Empty query rejected`);
+    return reply(400, { error: 'لطفاً نام کالا یا خدمت را وارد کنید.' }, reqId);
+  }
+  
+  if (q.length > CONFIG.MAX_QUERY_LENGTH) {
+    return reply(400, { error: 'عبارت جست‌وجو بیش از حد طولانی است.' }, reqId);
   }
 
-  const query = sanitizeInput(event.queryStringParameters?.q);
+  const key = process.env.GOOGLE_CSE_API_KEY;
+  const cx = process.env.GOOGLE_CSE_CX;
 
-  if (!query) {
-    return createResponse(400, { error: 'لطفاً نام کالا یا خدمت را وارد کنید.', code: 'MISSING_QUERY' }, { requestId });
-  }
+  console.log(`[${reqId}] Env check: key=${key ? 'yes' : 'NO'}, cx=${cx ? 'yes' : 'NO'}`);
 
-  if (query.length > CONFIG.MAX_QUERY_LENGTH) {
-    return createResponse(400, { error: 'عبارت جست‌وجو بیش از حد طولانی است.', code: 'QUERY_TOO_LONG' }, { requestId });
-  }
-
-  const apiKey = process.env.GOOGLE_CSE_API_KEY;
-  const searchEngineId = process.env.GOOGLE_CSE_CX;
-
-  if (!apiKey || !searchEngineId) {
-    return createResponse(503, { error: 'سرویس جست‌وجو پیکربندی نشده است.', code: 'SERVICE_MISCONFIGURED' }, { requestId });
+  if (!key || !cx) {
+    return reply(503, { error: 'موتور جست‌وجو پیکربندی نشده است. تنظیمات API در Netlify را بررسی کنید.' }, reqId);
   }
 
   try {
-    const apiUrl = new URL('https://www.googleapis.com/customsearch/v1');
-    apiUrl.searchParams.set('key', apiKey);
-    apiUrl.searchParams.set('cx', searchEngineId);
-    apiUrl.searchParams.set('q', buildSearchQuery(query));
-    apiUrl.searchParams.set('num', String(CONFIG.MAX_RESULTS));
-    apiUrl.searchParams.set('safe', 'active');
+    const url = new URL('https://www.googleapis.com/customsearch/v1');
+    url.searchParams.set('key', key);
+    url.searchParams.set('cx', cx);
+    url.searchParams.set('q', buildQuery(q));
+    url.searchParams.set('num', String(CONFIG.MAX_RESULTS));
 
-    const response = await fetch(apiUrl.toString(), {
-      signal: createTimeoutSignal(CONFIG.DEFAULT_TIMEOUT_MS),
-      headers: { 'Accept': 'application/json' },
+    const urlStr = url.toString().replace(key, '***HIDDEN***');
+    console.log(`[${reqId}] Calling: ${urlStr}`);
+
+    const response = await fetch(url.toString(), {
+      signal: makeTimeout(CONFIG.TIMEOUT_MS)
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error(`[${requestId}] Google API ${response.status}:`, errorData);
-
-      const messages = {
-        400: 'درخواست نامعتبر.',
-        403: 'دسترسی محدود شده - کلید API را بررسی کنید.',
-        429: 'سهمیه به پایان رسید. لطفاً بعداً تلاش کنید.',
-      };
-
-      return createResponse(502, {
-        error: messages[response.status] || 'سرویس جست‌وجو خطا داد.',
-        code: 'SEARCH_PROVIDER_ERROR',
-        status: response.status,
-      }, { requestId });
-    }
+    console.log(`[${reqId}] Response status: ${response.status}`);
 
     let data;
     try {
       data = await response.json();
-    } catch {
-      return createResponse(502, { error: 'پاسخ نامعتبر از سرویس جست‌وجو.', code: 'INVALID_RESPONSE' }, { requestId });
+    } catch (parseErr) {
+      console.error(`[${reqId}] JSON parse error:`, parseErr.message);
+      return reply(502, { error: 'پاسخ نامعتبر از سرویس جست‌وجو.' }, reqId);
     }
 
-    const seenHosts = new Set();
+    if (!response.ok) {
+      console.error(`[${reqId}] API error:`, data.error);
+      const msg = response.status === 429 ? 'سهمیه جست‌وجو تمام شده است.'
+        : response.status === 403 ? 'دسترسی به API محدود شده است.'
+        : response.status === 400 ? 'درخواست نامعتبر - CX یا کلید API اشتباه است.'
+        : 'سرویس جست‌وجو خطا داد.';
+      return reply(502, { error: msg, details: data.error?.message }, reqId);
+    }
+
+    console.log(`[${reqId}] Items received: ${data.items?.length || 0}`);
+
+    const seen = new Set();
     const results = (data.items || [])
-      .filter(item => item?.link)
+      .filter(item => item && item.link)
       .map(item => ({
-        title: item.title || extractHost(item.link),
+        title: item.title || hostOf(item.link),
         link: item.link,
         snippet: item.snippet || '',
-        host: extractHost(item.link),
-        score: calculateScore(item),
+        host: hostOf(item.link),
+        score: scoreResult(item)
       }))
       .filter(item => {
-        if (!item.host || isBlockedDomain(item.host) || seenHosts.has(item.host)) return false;
-        seenHosts.add(item.host);
+        if (!item.host) return false;
+        const blocked = BLOCKED.some(d => item.host === d || item.host.endsWith('.' + d));
+        if (blocked || seen.has(item.host)) return false;
+        seen.add(item.host);
         return true;
       })
       .sort((a, b) => b.score - a.score)
@@ -207,22 +164,23 @@ export const handler = async (event) => {
         score: item.score,
         reason: item.score >= 70
           ? 'نشانه‌های تجاری و ارتباط متنی قوی‌تر'
-          : 'نتیجه مرتبط؛ اعتبار فروشگاه را بررسی کنید',
+          : 'نتیجه مرتبط؛ اعتبار فروشگاه را بررسی کنید'
       }));
 
-    return createResponse(200, {
-      query,
+    console.log(`[${reqId}] Returning ${results.length} results`);
+
+    return reply(200, {
+      query: q,
       results,
-      note: 'امتیازها تخمینی هستند و اعتبار واقعی فروشگاه را تضمین نمی‌کنند.',
-    }, { requestId });
+      total: data.searchInformation?.totalResults,
+      note: 'امتیازها تخمینی هستند و اعتبار واقعی فروشگاه را تضمین نمی‌کنند.'
+    }, reqId);
 
-  } catch (error) {
-    const isTimeout = error.name === 'TimeoutError' || error.name === 'AbortError';
-    console.error(`[${requestId}] ${isTimeout ? 'Timeout' : 'Error'}:`, error.message);
-
-    return createResponse(500, {
-      error: isTimeout ? 'سرویس زمان‌بر شد. دوباره تلاش کنید.' : 'ارتباط با سرویس جست‌وجو برقرار نشد.',
-      code: isTimeout ? 'TIMEOUT' : 'INTERNAL_ERROR',
-    }, { requestId });
+  } catch (err) {
+    console.error(`[${reqId}] Exception:`, err.name, err.message);
+    const isTimeout = err.name === 'AbortError' || err.name === 'TimeoutError';
+    return reply(500, {
+      error: isTimeout ? 'سرویس جست‌وجو زمان‌بر شد. دوباره تلاش کنید.' : 'ارتباط با سرویس جست‌وجو برقرار نشد.'
+    }, reqId);
   }
 };
