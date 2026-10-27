@@ -1,3 +1,4 @@
+'use strict';
 const BLOCKED = [
 "facebook.com", "instagram.com", "tiktok.com", "youtube.com",
 "wikipedia.org", "reddit.com", "pinterest.com", "linkedin.com"
